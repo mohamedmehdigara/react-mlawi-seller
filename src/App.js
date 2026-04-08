@@ -1,291 +1,222 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import styled, { createGlobalStyle, ThemeProvider, keyframes } from 'styled-components';
+import styled, { createGlobalStyle, ThemeProvider } from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// --- Theme Configuration ---
+// --- Theme ---
 const theme = {
   colors: {
     primary: '#e67e22',
     secondary: '#d35400',
-    success: '#27ae60',
-    danger: '#c0392b',
-    background: '#fcf8f2',
+    accent: '#f1c40f',
+    bg: '#fcf8f2',
+    card: '#ffffff',
     text: '#2c3e50',
-    white: '#ffffff',
-  },
-  shadows: {
-    soft: '0 4px 20px rgba(0,0,0,0.08)',
-    strong: '0 8px 30px rgba(0,0,0,0.12)',
+    muted: '#95a5a6'
   }
 };
 
-// --- Global Styles ---
 const GlobalStyle = createGlobalStyle`
-  body {
-    margin: 0;
-    padding: 0;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: ${props => props.theme.colors.background};
-    color: ${props => props.theme.colors.text};
-    -webkit-font-smoothing: antialiased;
-  }
+  body { margin: 0; font-family: 'Poppins', sans-serif; background: ${props => props.theme.colors.bg}; color: ${props => props.theme.colors.text}; }
   * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #e67e22; border-radius: 10px; }
 `;
 
-// --- State Management (Zustand with Persistence) ---
-const useStore = create(
-  persist(
-    (set) => ({
-      cart: [],
-      addToCart: (product) => set((state) => {
-        const exists = state.cart.find(item => item.id === product.id);
-        if (exists) {
-          return {
-            cart: state.cart.map(item =>
-              item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-            )
-          };
-        }
-        return { cart: [...state.cart, { ...product, quantity: 1 }] };
-      }),
-      updateQuantity: (id, delta) => set((state) => ({
-        cart: state.cart.map(item => 
-          item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
-        )
-      })),
-      removeFromCart: (id) => set((state) => ({
-        cart: state.cart.filter(item => item.id !== id)
-      })),
-      clearCart: () => set({ cart: [] }),
-    }),
-    { name: 'mlawi-cart-storage' }
-  )
-);
+// --- Store ---
+const useStore = create(persist((set) => ({
+  cart: [],
+  currentView: { page: 'home', params: null },
+  setView: (page, params = null) => set({ currentView: { page, params } }),
+  addToCart: (item) => set((state) => {
+    const existing = state.cart.find(i => i.id === item.id);
+    if (existing) return { cart: state.cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i) };
+    return { cart: [...state.cart, { ...item, quantity: 1 }] };
+  }),
+  removeFromCart: (id) => set((state) => ({ cart: state.cart.filter(i => i.id !== id) })),
+  clearCart: () => set({ cart: [] }),
+}), { name: 'mlawi-pro-storage' }));
 
 // --- Styled Components ---
-const AppContainer = styled.div`
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 40px 20px;
-`;
+const Container = styled.div` max-width: 1100px; margin: 0 auto; padding: 20px; `;
 
 const Nav = styled.nav`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 0;
-  margin-bottom: 40px;
+  display: flex; justify-content: space-between; align-items: center; 
+  padding: 20px 0; cursor: pointer;
 `;
 
-const Logo = styled.h1`
-  font-size: 1.8rem;
-  color: ${props => props.theme.colors.primary};
-  margin: 0;
-  span { color: ${props => props.theme.colors.text}; }
+const SearchInput = styled.input`
+  width: 100%; padding: 12px 20px; border-radius: 12px; border: 1px solid #ddd;
+  margin-bottom: 30px; font-size: 1rem; outline: none;
+  &:focus { border-color: ${props => props.theme.colors.primary}; }
 `;
 
-const Hero = styled.div`
-  background: linear-gradient(135deg, ${props => props.theme.colors.primary}, ${props => props.theme.colors.secondary});
-  color: white;
-  padding: 60px 40px;
-  border-radius: 24px;
-  text-align: center;
-  margin-bottom: 50px;
-  box-shadow: ${props => props.theme.shadows.strong};
+const Grid = styled.div`
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px;
 `;
 
-const ProductGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 25px;
+const Card = styled(motion.div)`
+  background: white; border-radius: 18px; padding: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+  display: flex; flex-direction: column; cursor: pointer;
 `;
 
-const ProductCard = styled(motion.div)`
-  background: white;
-  border-radius: 20px;
-  padding: 25px;
-  box-shadow: ${props => props.theme.shadows.soft};
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+const Badge = styled.span`
+  background: ${props => props.type === 'drink' ? '#3498db' : '#e67e22'};
+  color: white; padding: 4px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: bold; width: fit-content;
 `;
 
-const Tag = styled.span`
-  background: #fff3e0;
-  color: #e67e22;
-  font-size: 0.75rem;
-  font-weight: bold;
-  padding: 4px 12px;
-  border-radius: 50px;
-  align-self: flex-start;
-  margin-bottom: 15px;
+const Button = styled(motion.button)`
+  background: ${props => props.variant === 'secondary' ? '#ecf0f1' : props.theme.colors.primary};
+  color: ${props => props.variant === 'secondary' ? '#333' : 'white'};
+  border: none; padding: 12px; border-radius: 12px; font-weight: 600; cursor: pointer;
+  margin-top: 10px; width: 100%;
 `;
 
-const AddButton = styled(motion.button)`
-  background: ${props => props.theme.colors.primary};
-  color: white;
-  border: none;
-  padding: 12px;
-  border-radius: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: auto;
-  &:hover { background: ${props => props.theme.colors.secondary}; }
+const CartSidebar = styled(motion.div)`
+  position: fixed; right: 0; top: 0; bottom: 0; width: 350px; background: white;
+  box-shadow: -5px 0 20px rgba(0,0,0,0.1); padding: 30px; z-index: 1000;
 `;
 
-const Sidebar = styled(motion.div)`
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  width: 350px;
-  background: white;
-  border-radius: 24px;
-  box-shadow: ${props => props.theme.shadows.strong};
-  padding: 25px;
-  z-index: 100;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-
-  @media (max-width: 400px) {
-    width: calc(100% - 40px);
-  }
-`;
-
-const CartList = styled.div`
-  overflow-y: auto;
-  margin: 15px 0;
-  flex-grow: 1;
-`;
-
-const CartItem = styled(motion.div)`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
-`;
-
-// --- Mock Data ---
-const PRODUCTS = [
-  { id: 'm1', name: "Standard Mlawi", price: 1.500, category: "Classic" },
-  { id: 'm2', name: "Mlawi Egg & Cheese", price: 2.800, category: "Popular" },
-  { id: 'm3', name: "Mlawi Tuna Extra", price: 3.900, category: "Signature" },
-  { id: 'm4', name: "Mlawi Harissa Chicken", price: 4.500, category: "Spicy" },
-  { id: 'm5', name: "Mlawi Mixed Meat", price: 5.200, category: "Premium" },
+// --- Data ---
+const MENU = [
+  { id: 1, name: "Mlawi Classic", price: 1.5, cat: "Flatbread", desc: "Authentic plain semolina bread." },
+  { id: 2, name: "Mlawi Royal", price: 4.5, cat: "Special", desc: "Tuna, Egg, Harissa, Cheese, and Salami." },
+  { id: 3, name: "Mlawi Kaftaji", price: 3.8, cat: "Traditional", desc: "Fried vegetable mix with egg." },
+  { id: 4, name: "Mlawi Chawarma", price: 5.5, cat: "Meaty", desc: "Spiced chicken with garlic cream." },
+  { id: 5, name: "Mlawi Cheese Bomb", price: 3.2, cat: "Vegetarian", desc: "Mozzarella, Gruyere, and Ricotta." },
+  { id: 7, name: "Boga Lim", price: 1.8, cat: "drink", desc: "Refreshing lemon soda." },
+  { id: 8, name: "Citronnade Artisanale", price: 3.0, cat: "drink", desc: "Homemade fresh lemon juice." },
+  { id: 9, name: "Small Fries", price: 2.0, cat: "side", desc: "Hand-cut potato fries." },
+  { id: 10, name: "Mlawi Nutella", price: 3.5, cat: "dessert", desc: "Sweet flatbread with chocolate hazelnut." }
 ];
 
+// --- Views ---
+const ProductDetail = ({ item, onBack, onAdd }) => (
+  <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+    <Button variant="secondary" onClick={onBack} style={{ width: 'fit-content' }}>← Back to Menu</Button>
+    <div style={{ marginTop: '30px' }}>
+      <Badge type={item.cat}>{item.cat.toUpperCase()}</Badge>
+      <h1 style={{ fontSize: '2.5rem', margin: '10px 0' }}>{item.name}</h1>
+      <p style={{ fontSize: '1.2rem', color: '#666', lineHeight: '1.6' }}>{item.desc}</p>
+      <h2 style={{ color: '#27ae60' }}>{item.price.toFixed(3)} TND</h2>
+      <ul style={{ paddingLeft: '20px', color: '#7f8c8d' }}>
+        <li>Preparation time: 10-15 mins</li>
+        <li>Fresh ingredients sourced locally</li>
+        <li>Traditional semolina dough</li>
+      </ul>
+      <Button onClick={() => onAdd(item)} style={{ fontSize: '1.1rem', padding: '18px' }}>Add to Cart - {item.price.toFixed(3)} TND</Button>
+    </div>
+  </motion.div>
+);
+
+const SuccessView = ({ onHome }) => (
+  <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} style={{ textAlign: 'center', marginTop: '100px' }}>
+    <div style={{ fontSize: '5rem' }}>👨‍🍳</div>
+    <h1>Order Fired Up!</h1>
+    <p>We are stretching your dough right now. It will be ready shortly.</p>
+    <Button onClick={onHome} style={{ width: '200px' }}>Order More</Button>
+  </motion.div>
+);
+
+// --- Main App ---
 export default function App() {
-  const { cart, addToCart, removeFromCart, updateQuantity, clearCart } = useStore();
-  const [isOrdering, setIsOrdering] = useState(false);
+  const { cart, addToCart, removeFromCart, currentView, setView, clearCart } = useStore();
+  const [search, setSearch] = useState("");
 
-  const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const filteredMenu = useMemo(() => 
+    MENU.filter(i => i.name.toLowerCase().includes(search.toLowerCase())), 
+  [search]);
 
-  const handleOrder = () => {
-    setIsOrdering(true);
-    setTimeout(() => {
-      alert("Order Received! Our chef is preparing your Mlawi.");
-      clearCart();
-      setIsOrdering(false);
-    }, 1500);
-  };
+  const total = cart.reduce((acc, i) => acc + (i.price * i.quantity), 0);
 
   return (
     <ThemeProvider theme={theme}>
       <GlobalStyle />
-      <AppContainer>
-        <Nav>
-          <Logo>Mlawi<span>App</span></Logo>
-          <div style={{ fontWeight: '500' }}>Tunis, TN 🇹🇳</div>
+      <Container>
+        <Nav onClick={() => setView('home')}>
+          <h2 style={{ margin: 0 }}>Mlawi<span style={{ color: theme.colors.primary }}>Express</span></h2>
+          <div>Cart ({cart.length})</div>
         </Nav>
 
-        <Hero>
-          <motion.h2 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-            Hand-Stretched Daily.
-          </motion.h2>
-          <p>Experience authentic Tunisian street food with premium ingredients.</p>
-        </Hero>
-
-        <section>
-          <h3 style={{ marginBottom: '25px' }}>Explore Menu</h3>
-          <ProductGrid>
-            {PRODUCTS.map((product) => (
-              <ProductCard 
-                key={product.id}
-                whileHover={{ y: -8 }}
-              >
-                <Tag>{product.category}</Tag>
-                <h4 style={{ margin: '0 0 10px 0' }}>{product.name}</h4>
-                <div style={{ fontSize: '1.2rem', fontWeight: '700', marginBottom: '20px' }}>
-                  {product.price.toFixed(3)} <small style={{ fontSize: '0.7rem' }}>TND</small>
-                </div>
-                <AddButton 
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => addToCart(product)}
-                >
-                  Add to Cart
-                </AddButton>
-              </ProductCard>
-            ))}
-          </ProductGrid>
-        </section>
-
-        <AnimatePresence>
-          {cart.length > 0 && (
-            <Sidebar
-              initial={{ x: 400, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 400, opacity: 0 }}
-            >
-              <h3 style={{ margin: 0 }}>My Basket</h3>
-              <CartList>
-                {cart.map((item) => (
-                  <CartItem 
-                    key={item.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
+        <AnimatePresence mode="wait">
+          {currentView.page === 'home' && (
+            <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <SearchInput 
+                placeholder="Search your favorite Mlawi..." 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Grid>
+                {filteredMenu.map(item => (
+                  <Card 
+                    key={item.id} 
+                    whileHover={{ y: -5 }} 
+                    onClick={() => setView('detail', item)}
                   >
-                    <div>
-                      <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{item.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#888' }}>
-                        {item.price.toFixed(3)} TND
-                      </div>
+                    <Badge type={item.cat}>{item.cat}</Badge>
+                    <h3 style={{ margin: '10px 0 5px' }}>{item.name}</h3>
+                    <p style={{ fontSize: '0.85rem', color: '#777', flexGrow: 1 }}>{item.desc}</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
+                      <span style={{ fontWeight: 'bold' }}>{item.price.toFixed(3)}</span>
+                      <Button 
+                        whileTap={{ scale: 0.9 }} 
+                        style={{ width: 'auto', padding: '8px 15px' }}
+                        onClick={(e) => { e.stopPropagation(); addToCart(item); }}
+                      >+</Button>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <button 
-                        style={{ border: 'none', background: '#eee', borderRadius: '4px', cursor: 'pointer' }}
-                        onClick={() => updateQuantity(item.id, -1)}
-                      >-</button>
-                      <span style={{ fontWeight: 'bold' }}>{item.quantity}</span>
-                      <button 
-                        style={{ border: 'none', background: '#eee', borderRadius: '4px', cursor: 'pointer' }}
-                        onClick={() => updateQuantity(item.id, 1)}
-                      >+</button>
-                    </div>
-                  </CartItem>
+                  </Card>
                 ))}
-              </CartList>
-              
-              <div style={{ borderTop: '2px solid #f9f9f9', paddingTop: '15px' }}>
-                <div style={{ display: 'flex', justifySelf: 'space-between', justifyContent: 'space-between', marginBottom: '15px' }}>
-                  <strong>Total Payable</strong>
-                  <strong style={{ color: theme.colors.primary }}>{total.toFixed(3)} TND</strong>
-                </div>
-                <AddButton 
-                  disabled={isOrdering}
-                  style={{ width: '100%', padding: '15px' }}
-                  onClick={handleOrder}
-                >
-                  {isOrdering ? 'Processing...' : 'Place Order Now'}
-                </AddButton>
-              </div>
-            </Sidebar>
+              </Grid>
+            </motion.div>
+          )}
+
+          {currentView.page === 'detail' && (
+            <ProductDetail 
+              key="detail"
+              item={currentView.params} 
+              onBack={() => setView('home')} 
+              onAdd={addToCart}
+            />
+          )}
+
+          {currentView.page === 'success' && (
+            <SuccessView key="success" onHome={() => setView('home')} />
           )}
         </AnimatePresence>
-      </AppContainer>
+
+        {/* Sidebar Cart */}
+        <AnimatePresence>
+          {cart.length > 0 && currentView.page !== 'success' && (
+            <CartSidebar initial={{ x: 350 }} animate={{ x: 0 }} exit={{ x: 350 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <h3>Your Basket</h3>
+                <button onClick={clearCart} style={{ border: 'none', background: 'none', color: 'red', cursor: 'pointer' }}>Clear</button>
+              </div>
+              <div style={{ height: '70%', overflowY: 'auto', margin: '20px 0' }}>
+                {cart.map(item => (
+                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                    <div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{item.quantity}x {item.name}</div>
+                    </div>
+                    <div>
+                      <span style={{ marginRight: '10px' }}>{(item.price * item.quantity).toFixed(3)}</span>
+                      <span onClick={() => removeFromCart(item.id)} style={{ cursor: 'pointer' }}>✕</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ borderTop: '2px solid #eee', paddingTop: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '20px' }}>
+                  <span>Total:</span>
+                  <span>{total.toFixed(3)} TND</span>
+                </div>
+                <Button onClick={() => { clearCart(); setView('success'); }}>Checkout Order</Button>
+              </div>
+            </CartSidebar>
+          )}
+        </AnimatePresence>
+      </Container>
     </ThemeProvider>
   );
 }
